@@ -6,12 +6,53 @@ const items = require('../src/lib/items');
 test('katalog sözleşmedeki şekilde ve sırada', () => {
   const c = catalog.getCatalog();
   assert.deepEqual(c.items.map((i) => i.id), [
-    'ball_klasik', 'ball_karpuz', 'ball_gezegen', 'ball_goz', 'ball_disko', 'ball_yildiz',
-    'ink_lacivert', 'ink_kirmizi', 'ink_nane', 'ink_mor', 'ink_altin',
-    'theme_kagit', 'theme_nane', 'theme_gunbatimi', 'theme_gece',
+    'ball_klasik',
+    'ball_karpuz',
+    'ball_basket',
+    'ball_tenis',
+    'ball_plaj',
+    'ball_gezegen',
+    'ball_ay',
+    'ball_bilardo',
+    'ball_goz',
+    'ball_buz',
+    'ball_lav',
+    'ball_gokkusagi',
+    'ball_disko',
+    'ball_yildiz',
+    'ink_lacivert',
+    'ink_kirmizi',
+    'ink_nane',
+    'ink_turuncu',
+    'ink_pembe',
+    'ink_mavi',
+    'ink_turkuaz',
+    'ink_yesil',
+    'ink_mor',
+    'ink_kahve',
+    'ink_bordo',
+    'ink_gumus',
+    'ink_altin',
+    'theme_kagit',
+    'theme_nane',
+    'theme_gunbatimi',
+    'theme_lavanta',
+    'theme_gokyuzu',
+    'theme_limon',
+    'theme_seker',
+    'theme_orman',
+    'theme_uzay',
+    'theme_gece',
   ]);
-  assert.deepEqual(c.items[4], { id: 'ball_disko', category: 'ball', price: 0, unlock: 'task', task_id: 'ach_score_500' });
-  assert.deepEqual(c.items[7], { id: 'ink_kirmizi', category: 'ink', price: 150, unlock: 'coins', color: '#F45D35' });
+  const byId = Object.fromEntries(c.items.map((i) => [i.id, i]));
+  assert.deepEqual(byId.ball_disko, { id: 'ball_disko', category: 'ball', price: 0, unlock: 'task', task_id: 'ach_score_500' });
+  assert.deepEqual(byId.ink_kirmizi, { id: 'ink_kirmizi', category: 'ink', price: 150, unlock: 'coins', color: '#F45D35' });
+  // Her kategoride tam bir varsayılan; renkli kategorilerde her öğenin rengi var.
+  for (const cat of catalog.CATEGORIES) {
+    assert.equal(c.items.filter((i) => i.category === cat && i.unlock === 'default').length, 1);
+  }
+  assert.ok(c.items.filter((i) => i.category !== 'ball').every((i) => /^#[0-9A-F]{6}$/.test(i.color)));
+  assert.equal(new Set(c.items.map((i) => i.id)).size, c.items.length);
   assert.deepEqual(c.premium, { product_id: 'dashink_premium', entitlement: 'premium', bonus_coins: 1000 });
   assert.equal(c.coin_packs.length, 3);
   assert.deepEqual(c.coin_packs[0], { product_id: 'dashink_coins_500', coins: 500 });
