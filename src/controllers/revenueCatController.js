@@ -1,4 +1,4 @@
-// RevenueCat webhook: premium ver (INITIAL_PURCHASE / NON_RENEWING_PURCHASE / TRANSFER) veya geri al (CANCELLATION / REFUND).
+// RevenueCat webhook: premium / coin pack ver veya iade ile geri al.
 const crypto = require('crypto');
 const env = require('../config/env');
 const { ApiError } = require('../lib/apiError');
@@ -33,6 +33,7 @@ async function handleWebhook(req, res) {
     transaction_id: decision.transactionId,
     product_id: decision.productId,
     environment: decision.environment,
+    coins: decision.coins || 0,
   };
 
   if (decision.action === 'ignore') {
@@ -42,7 +43,7 @@ async function handleWebhook(req, res) {
 
   const userId = await purchaseService.resolveUserId(decision.userIds);
   if (!userId) {
-    // 200 dönülür (RevenueCat tekrar denemesin); premium kullanıcı /purchases/sync çağırınca verilir.
+    // 200 (RevenueCat tekrar denemesin); kullanıcı /purchases/sync ile de yakalanır.
     logger.warn('revenuecat.webhook_unknown_user', { ...logMeta, user_ids: decision.userIds });
     return success(res, { handled: false, reason: 'unknown_user' });
   }
@@ -58,11 +59,40 @@ async function handleWebhook(req, res) {
     return success(res, { handled: true, action: 'grant', granted: r.granted, bonus: r.bonus });
   }
 
+  if (decision.action === 'grant_coins') {
+    const r = await purchaseService.grantCoinPack(userId, {
+      productId: decision.productId,
+      coins: decision.coins,
+      transactionId: decision.transactionId,
+      source: 'webhook',
+      environment: decision.environment,
+      raw: req.body.event,
+    });
+    logger.info('revenuecat.webhook_grant_coins', { ...logMeta, user_id: userId, ...r });
+    return success(res, {
+      handled: true,
+      action: 'grant_coins',
+      granted: r.granted,
+      coins: r.coins,
+      duplicate: r.duplicate,
+    });
+  }
+
   if (decision.action === 'transfer') {
-    // TRANSFER olayında ürün bilgisi yok: hedef kullanıcının entitlement'ı REST ile doğrulanıp verilir.
     const progress = await purchaseService.syncFromRevenueCat(userId);
     logger.info('revenuecat.webhook_transfer', { ...logMeta, user_id: userId, premium: progress.premium });
     return success(res, { handled: true, action: 'transfer', premium: progress.premium });
+  }
+
+  if (decision.action === 'revoke_coins') {
+    const r = await purchaseService.revokeCoinPack(userId, {
+      productId: decision.productId,
+      transactionId: decision.transactionId,
+      environment: decision.environment,
+      raw: req.body.event,
+    });
+    logger.info('revenuecat.webhook_revoke_coins', { ...logMeta, user_id: userId, ...r });
+    return success(res, { handled: true, action: 'revoke_coins', revoked: r.revoked, coins: r.coins });
   }
 
   const r = await purchaseService.revokePremium(userId, { raw: req.body.event });

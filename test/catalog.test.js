@@ -13,6 +13,8 @@ test('katalog sözleşmedeki şekilde ve sırada', () => {
   assert.deepEqual(c.items[4], { id: 'ball_disko', category: 'ball', price: 0, unlock: 'task', task_id: 'ach_score_500' });
   assert.deepEqual(c.items[7], { id: 'ink_kirmizi', category: 'ink', price: 150, unlock: 'coins', color: '#F45D35' });
   assert.deepEqual(c.premium, { product_id: 'dashink_premium', entitlement: 'premium', bonus_coins: 1000 });
+  assert.equal(c.coin_packs.length, 3);
+  assert.deepEqual(c.coin_packs[0], { product_id: 'dashink_coins_500', coins: 500 });
   assert.ok(c.items.every((i) => catalog.CATEGORIES.includes(i.category) && catalog.UNLOCKS.includes(i.unlock)));
 });
 
@@ -27,6 +29,10 @@ test('ownedItemIds: varsayılanlar + user_items + premium', () => {
   const p = items.ownedItemIds([], true);
   assert.ok(['ball_yildiz', 'ink_altin', 'theme_gece'].every((id) => p.includes(id)));
   assert.deepEqual(items.PREMIUM_ITEM_IDS, ['ball_yildiz', 'ink_altin', 'theme_gece']);
+  // Altınla alınmış premium öğe, premium olmasa da sahiplikte kalır.
+  assert.ok(items.ownedItemIds(['ink_altin'], false).includes('ink_altin'));
+  assert.ok(!items.ownedItemIds(['ink_altin'], false).includes('ball_yildiz'));
+  assert.ok(catalog.ITEMS.filter((i) => i.unlock === 'premium').every((i) => i.price === catalog.PREMIUM_ITEM_PRICE));
 });
 
 test('resolveEquipped: sahip olunmayan kuşanılı öğe varsayılana döner', () => {
@@ -41,7 +47,9 @@ test('buyCheck: item_locked → already_owned → insufficient_coins', () => {
   const owned = items.ownedItemIds(['ink_kirmizi'], false);
   assert.equal(items.buyCheck(catalog.findItem('ball_klasik'), owned, 9999), 'item_locked');
   assert.equal(items.buyCheck(catalog.findItem('ball_disko'), owned, 9999), 'item_locked');
-  assert.equal(items.buyCheck(catalog.findItem('ball_yildiz'), owned, 9999), 'item_locked');
+  assert.equal(items.buyCheck(catalog.findItem('ball_yildiz'), owned, 2999), 'insufficient_coins');
+  assert.equal(items.buyCheck(catalog.findItem('ball_yildiz'), owned, 3000), null);
+  assert.equal(items.buyCheck(catalog.findItem('ball_yildiz'), items.ownedItemIds([], true), 9999), 'already_owned');
   assert.equal(items.buyCheck(catalog.findItem('ink_kirmizi'), owned, 9999), 'already_owned');
   assert.equal(items.buyCheck(catalog.findItem('ball_karpuz'), owned, 199), 'insufficient_coins');
   assert.equal(items.buyCheck(catalog.findItem('ball_karpuz'), owned, 200), null);

@@ -33,7 +33,14 @@ test('INITIAL_PURCHASE / NON_RENEWING_PURCHASE premium → grant', () => {
 
 test('entitlement_ids ile tanınır (product_id farklı olsa da)', () => {
   assert.equal(parseWebhookEvent(ev({ product_id: 'dashink_premium_v2' })).action, 'grant');
-  assert.equal(parseWebhookEvent(ev({ product_id: 'other', entitlement_ids: [] })).reason, 'not_premium');
+  assert.equal(parseWebhookEvent(ev({ product_id: 'other', entitlement_ids: [] })).reason, 'unknown_product');
+});
+
+test('coin pack INITIAL_PURCHASE / NON_RENEWING_PURCHASE → grant_coins', () => {
+  const d = parseWebhookEvent(ev({ product_id: 'dashink_coins_1200', entitlement_ids: [] }));
+  assert.equal(d.action, 'grant_coins');
+  assert.equal(d.coins, 1200);
+  assert.equal(parseWebhookEvent(ev({ type: 'REFUND', product_id: 'dashink_coins_500', entitlement_ids: [] })).action, 'revoke_coins');
 });
 
 test('CANCELLATION / REFUND → revoke', () => {

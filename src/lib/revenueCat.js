@@ -1,6 +1,6 @@
-// RevenueCat olay/cevap ayrıştırma (saf, DB'siz). Premium ver / geri al kararı burada verilir.
-const { PREMIUM } = require('../config/catalog');
-const { isPremiumProduct } = require('./items');
+// RevenueCat olay/cevap ayrıştırma (saf, DB'siz). Premium / coin pack kararları burada.
+const { PREMIUM, findCoinPack } = require('../config/catalog');
+const { isPremiumProduct, isCoinPackProduct } = require('./items');
 
 const GRANT_EVENT_TYPES = new Set(['INITIAL_PURCHASE', 'NON_RENEWING_PURCHASE']);
 // RevenueCat iadeleri çoğunlukla CANCELLATION (cancel_reason=CUSTOMER_SUPPORT) olarak gönderir; REFUND da kabul edilir.
@@ -37,23 +37,40 @@ function isPremiumEvent(event) {
   return ents.includes(PREMIUM.entitlement) || event.entitlement_id === PREMIUM.entitlement;
 }
 
+function isCoinPackEvent(event) {
+  return isCoinPackProduct(str(event.product_id));
+}
+
 /**
  * Webhook gövdesi → karar.
- * @returns {{ action: 'grant'|'revoke'|'transfer'|'ignore', reason?, type, eventId, transactionId, productId, userIds, environment }}
+ * @returns {{ action: 'grant'|'revoke'|'grant_coins'|'revoke_coins'|'transfer'|'ignore', reason?, type, eventId, transactionId, productId, userIds, environment, coins? }}
  */
 function parseWebhookEvent(body) {
   const event = body && typeof body === 'object' ? body.event : null;
   if (!event || typeof event !== 'object') {
-    return { action: 'ignore', reason: 'no_event', type: null, eventId: null, transactionId: null, productId: null, userIds: [], environment: null };
+    return {
+      action: 'ignore',
+      reason: 'no_event',
+      type: null,
+      eventId: null,
+      transactionId: null,
+      productId: null,
+      userIds: [],
+      environment: null,
+      coins: 0,
+    };
   }
   const type = str(event.type);
+  const productId = str(event.product_id);
+  const pack = findCoinPack(productId);
   const base = {
     type,
     eventId: str(event.id),
     transactionId: str(event.transaction_id) || str(event.id),
-    productId: str(event.product_id),
+    productId,
     userIds: candidateUserIds(event),
     environment: str(event.environment),
+    coins: pack ? pack.coins : 0,
   };
 
   if (!type) return { action: 'ignore', reason: 'no_type', ...base };
@@ -67,9 +84,15 @@ function parseWebhookEvent(body) {
   const isGrant = GRANT_EVENT_TYPES.has(type);
   const isRevoke = REVOKE_EVENT_TYPES.has(type);
   if (!isGrant && !isRevoke) return { action: 'ignore', reason: 'unhandled_type', ...base };
-  if (!isPremiumEvent(event)) return { action: 'ignore', reason: 'not_premium', ...base };
   if (base.userIds.length === 0) return { action: 'ignore', reason: 'no_app_user_id', ...base };
-  return { action: isGrant ? 'grant' : 'revoke', ...base };
+
+  if (isCoinPackEvent(event)) {
+    return { action: isGrant ? 'grant_coins' : 'revoke_coins', ...base };
+  }
+  if (isPremiumEvent(event)) {
+    return { action: isGrant ? 'grant' : 'revoke', ...base };
+  }
+  return { action: 'ignore', reason: 'unknown_product', ...base };
 }
 
 /**
@@ -106,12 +129,41 @@ function premiumFromSubscriber(apiResponse, now = new Date()) {
   };
 }
 
+/**
+ * Subscriber non_subscriptions içinden henüz işlenebilecek coin pack satın alımları.
+ * @returns {Array<{ productId: string, coins: number, transactionId: string, environment: string|null }>}
+ */
+function coinPacksFromSubscriber(apiResponse) {
+  const sub = apiResponse && apiResponse.subscriber;
+  if (!sub || typeof sub !== 'object') return [];
+  const nonSubs = sub.non_subscriptions && typeof sub.non_subscriptions === 'object' ? sub.non_subscriptions : {};
+  const out = [];
+  for (const [productId, list] of Object.entries(nonSubs)) {
+    const pack = findCoinPack(productId);
+    if (!pack || !Array.isArray(list)) continue;
+    for (const purchase of list) {
+      if (!purchase || typeof purchase !== 'object') continue;
+      const transactionId = str(purchase.store_transaction_id) || str(purchase.id);
+      if (!transactionId) continue;
+      out.push({
+        productId: pack.product_id,
+        coins: pack.coins,
+        transactionId,
+        environment: purchase.is_sandbox ? 'SANDBOX' : 'PRODUCTION',
+      });
+    }
+  }
+  return out;
+}
+
 module.exports = {
   GRANT_EVENT_TYPES,
   REVOKE_EVENT_TYPES,
   isUuid,
   candidateUserIds,
   isPremiumEvent,
+  isCoinPackEvent,
   parseWebhookEvent,
   premiumFromSubscriber,
+  coinPacksFromSubscriber,
 };

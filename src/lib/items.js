@@ -1,7 +1,8 @@
 // Öğe sahipliği / kuşanma / satın alma kuralları (saf, DB'siz).
 // Sahiplik türetilir: varsayılanlar + user_items (coin/görev) + premium ise premium öğeler.
-// Böylece premium geri alındığında premium öğeler owned_items'tan kendiliğinden çıkar.
-const { ITEMS, CATEGORIES, PREMIUM, findItem } = require('../config/catalog');
+// Böylece premium geri alındığında premium öğeler owned_items'tan kendiliğinden çıkar
+// (altınla alınmış premium öğe user_items'ta olduğu için kalır).
+const { ITEMS, CATEGORIES, PREMIUM, findItem, findCoinPack } = require('../config/catalog');
 const { CODES } = require('./apiError');
 
 const DEFAULT_EQUIPPED = Object.freeze(
@@ -15,7 +16,7 @@ function ownedItemIds(userItemIds, premium) {
   const set = new Set(userItemIds || []);
   return ITEMS.filter((i) => {
     if (i.unlock === 'default') return true;
-    if (i.unlock === 'premium') return Boolean(premium);
+    if (i.unlock === 'premium') return Boolean(premium) || set.has(i.id);
     return set.has(i.id);
   }).map((i) => i.id);
 }
@@ -32,12 +33,17 @@ function resolveEquipped(equipped, ownedIds) {
   return out;
 }
 
+/** Altınla satılan öğe mi (coins veya fiyatı olan premium öğe)? */
+function isCoinBuyable(item) {
+  return item.unlock === 'coins' || (item.unlock === 'premium' && item.price > 0);
+}
+
 /**
  * Coin ile satın alma kontrolü. Hata kodu (string) veya null döner.
- * Sıra: item_locked (default/task/premium öğe coin ile alınamaz) → already_owned → insufficient_coins.
+ * Sıra: item_locked (default/task öğe coin ile alınamaz) → already_owned → insufficient_coins.
  */
 function buyCheck(item, ownedIds, coins) {
-  if (item.unlock !== 'coins') return CODES.ITEM_LOCKED;
+  if (!isCoinBuyable(item)) return CODES.ITEM_LOCKED;
   if (ownedIds.includes(item.id)) return CODES.ALREADY_OWNED;
   if (Number(coins) < item.price) return CODES.INSUFFICIENT_COINS;
   return null;
@@ -49,12 +55,18 @@ function isPremiumProduct(productId) {
   return [productId, productId.split(':')[0]].includes(PREMIUM.product_id);
 }
 
+function isCoinPackProduct(productId) {
+  return Boolean(findCoinPack(productId));
+}
+
 module.exports = {
   DEFAULT_EQUIPPED,
   DEFAULT_ITEM_IDS,
   PREMIUM_ITEM_IDS,
   ownedItemIds,
   resolveEquipped,
+  isCoinBuyable,
   buyCheck,
   isPremiumProduct,
+  isCoinPackProduct,
 };

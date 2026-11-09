@@ -4,7 +4,9 @@ Flutter oyunu **Dashink** (top yuvarlanır, oyuncu önüne mürekkep çizgisi ç
 Express 5 + mysql2 (promise pool) + CommonJS, MariaDB/MySQL. ORM yok, build adımı yok.
 Sözleşme: `dashink/docs/API_CONTRACT.md` (snake_case alanlar, `{status, message, data}` zarfı, kökten sunulur — `/api` öneki yok).
 
-Reklam yoktur. Tek gerçek para ürünü RevenueCat ile satılan `dashink_premium` (non-consumable); premium'u ve coin'i yalnızca sunucu verir.
+Reklam yoktur. Gerçek para ürünleri RevenueCat ile satılır: `dashink_premium`
+(non-consumable) ve consumable coin paketleri (`dashink_coins_500/1200/3000`).
+Premium / coin kredisi yalnızca sunucu (webhook + `/purchases/sync`) verir.
 
 ## Kurulum
 
@@ -93,6 +95,8 @@ Hata kodları (`message`): `invalid_request` 400, `unauthorized` 401, `not_found
 - Görev ödülü: `task_claims (user_id, task_id, period_key)` UNIQUE; `period_key` günlükte `YYYY-MM-DD`, haftalıkta pazartesinin tarihi, başarımda `all`.
 - Günlük sıra ödülü: `daily_rewards (user_id, date)` UNIQUE.
 - Premium bonusu: `purchase_grants (user_id, product_id)` UNIQUE → 1000 coin bir kez.
+- Coin paketleri: `iap_coin_grants.transaction_id` UNIQUE → aynı paket tekrar alınabilir.
+- Bir `transaction_id` bir kez yüklenir; iade edilmiş (`revoked`) işlem sync ile **tekrar yüklenmez**. İade, yüklemeden önce gelirse 0 coin'lik `revoked` kayıt (tombstone) bırakılır. İade yalnız `transaction_id` ile eşleşir.
 - Tüm zamanlar UTC: havuz her bağlantıda `SET time_zone = '+00:00'` yapar; gün 00:00 UTC, hafta pazartesi 00:00 UTC.
 
 ## Kurallar ve sözleşme yorumları
@@ -110,15 +114,21 @@ Sözleşmede açık olmayan noktalarda seçilen en basit davranış:
 - **Günlük seed**: `HMAC-SHA256(DAILY_SEED_SECRET, "YYYY-MM-DD")` özetinin ilk 4 baytı big-endian okunup 1 bit sağa kaydırılır (ilk 31 bit, 0..2^31-1).
 - **Lazy günlük ödül**: PlayerProgress dönen her çağrıda, kullanıcı kilitliyken son 7 günün (bugün hariç) günlük parkurunda oynadığı ve `daily_rewards`'ta kaydı olmayan her gün için sırası hesaplanır. İlk 100 içindeyse 100 altın yüklenir ve `rewards`'a eklenir; değilse `coins = 0` kayıt bırakılır (o gün bir daha hesaplanmaz). 7 günden eski günler hiç ödüllendirilmez.
 - **`/purchases/sync`**: REST cevabında `entitlements.premium` aktifse (`expires_date` boş veya gelecekte) ya da `non_subscriptions.dashink_premium` doluysa premium verilir. Aktif değilse **geri alınmaz** (geri alma yalnızca iade webhook'u ile). Cevap sözleşmedeki gibi `PlayerProgress`.
-- **Webhook**: `INITIAL_PURCHASE` / `NON_RENEWING_PURCHASE` (ürün `dashink_premium` veya entitlement `premium`) → ver; `CANCELLATION` / `REFUND` → geri al (bonus geri alınmaz, `purchase_grants.status = revoked`). Yeniden satın almada premium tekrar verilir, bonus verilmez.
-  `TRANSFER` olayında ürün bilgisi olmadığı için hedef kullanıcının (`transferred_to`) entitlement'ı REST ile doğrulanıp verilir (doğrulanmadan premium verilmez). Bilinmeyen kullanıcı → 200.
+- **Webhook**: `INITIAL_PURCHASE` / `NON_RENEWING_PURCHASE`
+  - premium ürün / entitlement → premium ver
+  - coin paketi → altın yükle (`iap_coins`, `iap_coin_grants`)
+  - `CANCELLATION` / `REFUND` → premium geri al (bonus geri alınmaz) veya coin clawback
+  `TRANSFER` olayında hedef kullanıcı REST ile senkronlanır. Bilinmeyen kullanıcı → 200.
 - **Ad**: yeni kullanıcıya `Oyuncu 1000..9999`; ad benzersiz değildir. `/player/name` ile 2..32 karakter (unicode harf/rakam, boşluk, `_ - . '`); trim + iç boşluklar tek boşluğa iner.
 
 ## RevenueCat
 
-- Panel → Integrations → Webhooks: URL `https://<alan>/webhooks/revenuecat`, Authorization değeri = `REVENUECAT_WEBHOOK_AUTH` (`Bearer <değer>` de kabul edilir).
-- `/purchases/sync`: `GET {REVENUECAT_API_BASE}/subscribers/{user.id}` (`REVENUECAT_SECRET_KEY`, sk_...).
+- Panel → Integrations → Webhooks:
+  - URL: `https://dashink.fly-work.com/webhooks/revenuecat`
+  - Authorization header value: `.env` içindeki `REVENUECAT_WEBHOOK_AUTH` (aynı değer; `Bearer <değer>` de kabul)
+- `/purchases/sync`: `GET {REVENUECAT_API_BASE}/subscribers/{user.id}` (`REVENUECAT_SECRET_KEY`, sk_... zorunlu).
 - Uygulama `Purchases.logIn(user.id)` yapmalı; webhook'ta kullanıcı `app_user_id`, `original_app_user_id`, `aliases`, `transferred_to` içinden bulunur.
+- Store + RevenueCat'te ürün id'leri: `dashink_premium`, `dashink_coins_500`, `dashink_coins_1200`, `dashink_coins_3000`.
 
 ## Deploy (PM2 + nginx)
 

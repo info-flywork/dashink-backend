@@ -6,7 +6,9 @@ const { emptyMetrics, metricsFromRow, evaluateTask, newlyCompletable, METRICS } 
 test('görev listesi sözleşmedeki sırada', () => {
   assert.deepEqual(tasksForPeriod('daily').map((t) => t.id), ['daily_play_3', 'daily_coins_50', 'daily_share_1', 'daily_challenge_1', 'daily_score_100']);
   assert.deepEqual(tasksForPeriod('weekly').map((t) => t.id), ['weekly_play_20', 'weekly_challenge_3', 'weekly_coins_300', 'weekly_score_300']);
-  assert.deepEqual(tasksForPeriod('achievement').map((t) => t.id), ['ach_score_500', 'ach_games_50', 'ach_coins_1000', 'ach_share_5']);
+  assert.deepEqual(tasksForPeriod('achievement').map((t) => t.id), [
+    'ach_games_10', 'ach_score_500', 'ach_games_50', 'ach_coins_1000', 'ach_run_coins_100', 'ach_share_5', 'ach_daily_7', 'ach_score_1000', 'ach_games_200', 'ach_coins_5000', 'ach_share_20', 'ach_daily_30',
+  ]);
   assert.ok(TASKS.every((t) => METRICS.includes(t.metric)));
   assert.equal(findTask('ach_score_500').unlocks_item, 'ball_disko');
   assert.equal(findTask('daily_play_3').unlocks_item, null);
